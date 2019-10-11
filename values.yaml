@@ -83,6 +83,22 @@ pkgs:
 
 environments:
   qa2:
+    cognito:
+      enabled: false
+      policies:
+        PasswordPolicy:
+          MinimumLength: 8
+          TemporaryPasswordValidityDays: 7
+      fromEmail: noreply@tidepool.org       # The SES account that will send Cognito signup/forgot password emails
+      mfaConfiguration: OPTIONAL
+      userMigrationLambda:                  # Details of the User Migration Lambda
+        functionName: Cognito-Tidepool-User-Migration-Dev
+        functionHandler: tidepoolUserMigration
+      clientApps:                           # An array of Client Apps to create in this User Pool.
+        # Format of the clientApps configuration is the YAML equivalent of `aws cognito-idp create-user-pool-client --generate-cli-skeleton`
+        # - ClientName: tidepool-shoreline
+        #   GenerateSecret: true
+        #   ...
     marketo:
       enabled: false
     mongodb:
