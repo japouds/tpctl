@@ -22,6 +22,9 @@ local deployment(config) = {
         }
       },
       spec: {
+        securityContext: {
+          fsGroup: 65534 # To be able to read Kubernetes and AWS token files
+        },
         containers: [
           {
             command: [

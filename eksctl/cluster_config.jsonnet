@@ -122,7 +122,7 @@ local withBucketWritingPolicy(config, env, bucket) = {
       {
         Effect: "Allow",
         Action: "s3:ListBucket",
-        Resource: "arn:aws:s3:::%s/*" % bucket
+        Resource: "arn:aws:s3:::%s" % bucket
       },
       {
         Effect: "Allow",
@@ -145,7 +145,7 @@ local withBucketReadingPolicy(config, env, bucket) = {
       {
         Effect: "Allow",
         Action: "s3:ListBucket",
-        Resource: "arn:aws:s3:::%s/*" % bucket
+        Resource: "arn:aws:s3:::%s" % bucket
       },
       {
         Effect: "Allow",
@@ -233,11 +233,6 @@ local hydrophoneServiceAccount(config, env, namespace) = (
 
 local annotatedNodegroup(config, ng, clusterName) =
   ng + {
-      iam+: {
-        attachPolicyARNs+: [
-          "arn:aws:iam::%s:policy/eksctl-%s-external-secrets-managed-policy" % [config.aws.accountNumber, config.cluster.metadata.name]
-	]
-      },
       tags+: {
         "k8s.io/cluster-autoscaler/enabled": "true",
         ["k8s.io/cluster-autoscaler/" + clusterName]: "true"

@@ -14,10 +14,31 @@ function cluster_in_context() {
   fi
 }
 
+function install_certmanager {
+  start "installing cert-manager"
+  kubectl create namespace cert-manager
+  kubectl apply --validate=false -f https://github.com/jetstack/cert-manager/releases/download/v0.11.0/cert-manager.yaml
+  mkdir -p pkgs/certmanager
+  pushd pkgs/certmanager
+  curl -sL https://github.com/jetstack/cert-manager/releases/download/v0.11.0/cert-manager.yaml | separate_files | add_names
+  popd
+  complete "installed cert-manager"
+}
+
+function uninstall_certmanager {
+  start "uninstalling cert-manager"
+  kubectl get Issuers,ClusterIssuers,Certificates,CertificateRequests,Orders,Challenges --all-namespaces | kubectl delete -f -
+  curl -sL https://github.com/jetstack/cert-manager/releases/download/v0.11.0/cert-manager.yaml | kubectl delete -f -
+  kubectl delete namespace cert-manager
+  complete "uninstalled cert-manager"
+}
+
+
 function make_envrc() {
-  local context=$(get_context)
-  context=$(yq r kubeconfig.yaml current-context)
+  local cluster=$(get_cluster)
+  local context=$(yq r kubeconfig.yaml current-context)
   echo "kubectx $context" >.envrc
+  echo "export REMOTE_REPO=cluster-$cluster"
   add_file ".envrc"
 }
 
@@ -243,22 +264,24 @@ function set_template_dir() {
     start "cloning quickstart"
     pushd $TMP_DIR >/dev/null 2>&1
     git clone $(repo_with_token https://github.com/tidepool-org/tpctl)
+    if [ -n "$TPCTL_BRANCH" ]; then
+      git checkout $TPCTL_BRANCH
+    fi
     export TEMPLATE_DIR=$(pwd)/tpctl
     popd >/dev/null 2>&1
     complete "cloned quickstart"
   fi
 }
 
-# clone development repo, exports DEV_DIR and CHART_DIR
-function set_tools_dir() {
+# clone development repo, exports CHART_DIR
+function set_chart_dir() {
   if [[ ! -d $CHART_DIR ]]; then
     start "cloning development tools"
     pushd $TMP_DIR >/dev/null 2>&1
     git clone $(repo_with_token https://github.com/tidepool-org/development)
     cd development
     git checkout develop
-    DEV_DIR=$(pwd)
-    CHART_DIR=${DEV_DIR}/charts/tidepool/0.1.7
+    CHART_DIR=$(pwd)/charts/tidepool/0.1.7
     popd >/dev/null 2>&1
     complete "cloned development tools"
   fi
@@ -708,7 +731,6 @@ function make_flux() {
   local email=$(get_email)
   start "installing flux into cluster $cluster"
   establish_ssh
-  rm -rf flux
   EKSCTL_EXPERIMENTAL=true unbuffer eksctl install \
     flux -f config.yaml --git-url=${GIT_REMOTE_REPO}.git --git-email=$email --git-label=$cluster | tee $TMP_DIR/eksctl.out
   expect_success "eksctl install flux failed."
@@ -758,6 +780,22 @@ EOF
   complete "authorized access to ${GIT_REMOTE_REPO}"
 }
 
+function update_gloo_service() {
+  local glooServiceFile=gloo/gloo-system/Service/gateway-proxy-v2.yaml
+  if [ -f $glooServiceFile ]; then
+    start "updating gloo service"
+    local config=$(get_config)
+    local prev=$TMP_DIR/svc.json
+    yq r $glooServiceFile -j >$prev
+    jsonnet --tla-code config="$config" --tla-code-file prev=$prev $TEMPLATE_DIR/gloo/svc.jsonnet >$glooServiceFile
+    expect_success "Templating failure $TEMPLATE_DIR/gloo/svc.jsonnet"
+    add_file $glooServiceFile
+    complete "updated gloo service"
+  else
+    info "No gloo service to update"
+  fi
+}
+
 # update flux and helm operator manifests
 function update_flux() {
   start "updating flux and flux-helm-operator manifests"
@@ -771,26 +809,17 @@ function update_flux() {
     jsonnet --tla-code config="$config" --tla-code-file flux="$TMP_DIR/flux.json" --tla-code-file helm="$TMP_DIR/helm.json" $TEMPLATE_DIR/flux/flux.jsonnet --tla-code-file tiller="$TMP_DIR/tiller.json" >$TMP_DIR/updated.json
     expect_success "Templating failure flux/flux.jsonnet"
 
-    add_file flux/flux-deployment-updated.yaml
-    yq r $TMP_DIR/updated.json flux >flux/flux-deployment-updated.yaml
-    expect_success "Serialization flux/flux-deployment-updated.yaml"
+    add_file flux/flux-deployment.yaml
+    yq r $TMP_DIR/updated.json flux >flux/flux-deployment.yaml
+    expect_success "Serialization flux/flux-deployment.yaml"
 
-    add_file flux/helm-operator-deployment-updated.yaml
-    yq r $TMP_DIR/updated.json helm >flux/helm-operator-deployment-updated.yaml
-    expect_success "Serialization flux/helm-operator-deployment-updated.yaml"
+    add_file flux/helm-operator-deployment.yaml
+    yq r $TMP_DIR/updated.json helm >flux/helm-operator-deployment.yaml
+    expect_success "Serialization flux/helm-operator-deployment.yaml"
 
-    add_file flux/tiller-dep-updated.yaml
-    yq r $TMP_DIR/updated.json tiller >flux/tiller-dep-updated.yaml
-    expect_success "Serialization flux/tiller-dep--updated.yaml"
-
-    rename_file flux/flux-deployment.yaml flux/flux-deployment.yaml.orig
-    mv flux/flux-deployment.yaml flux/flux-deployment.yaml.orig
-
-    rename_file flux/helm-operator-deployment.yaml flux/helm-operator-deployment.yaml.orig
-    mv flux/helm-operator-deployment.yaml flux/helm-operator-deployment.yaml.orig
-
-    rename_file flux/tiller-dep.yaml flux/tiller-dep.yaml.orig
-    mv flux/tiller-dep.yaml flux/tiller-dep.yaml.orig
+    add_file flux/tiller-dep.yaml
+    yq r $TMP_DIR/updated.json tiller >flux/tiller-dep.yaml
+    expect_success "Serialization flux/tiller-dep.yaml"
   fi
   complete "updated flux and flux-helm-operator manifests"
 }
@@ -839,8 +868,10 @@ function make_mesh() {
   complete "installed mesh"
 }
 
-# get secrets from legacy environments if requested
-function get_secrets() {
+# get values from legacy environments
+function get_legacy_values() {
+  set -x
+  local kind=$1
   local cluster=$(get_cluster)
   local env
   for env in $(get_environments); do
@@ -849,7 +880,7 @@ function get_secrets() {
       continue
     fi
     if [ "$source" == "dev" -o "$source" == "stg" -o "$source" == "int" -o "$source" == "prd" ]; then
-      $SM_DIR/bin/git_to_map $source | $SM_DIR/bin/map_to_k8s $env
+      $SM_DIR/bin/git_to_map $source | $SM_DIR/bin/map_to_k8s $env $kind
     else
       panic "Unknown secret source $source"
     fi
@@ -931,6 +962,7 @@ function edit_values() {
 
 # generate random secrets
 function randomize_secrets() {
+  set_chart_dir
   local env
   for env in $(get_environments); do
     local file
@@ -1005,81 +1037,13 @@ function await_deletion() {
 # migrate secrets from legacy GitHub repo to AWS secrets manager
 function migrate_secrets() {
   local cluster=$(get_cluster)
+  local secrets=$(get_legacy_values Secret)
+  local configmaps=$(get_legacy_values ConfigMap)
   mkdir -p external-secrets
-  (
-    cd external-secrets
-    get_secrets | external_secret upsert $cluster plaintext | separate_files | add_names
-  )
-}
-
-function create_secrets_managed_policy() {
-  local file=$TMP_DIR/policy.yaml
-
-  local cluster=$(get_cluster)
-  local region=$(get_region)
-  local stack_name=eksctl-${cluster}-external-secrets-managed-policy
-  aws cloudformation describe-stacks --stack-name $stack_name >/dev/null 2>&1
-  if [ $? -ne 0 ]; then
-    start "Creating IAM Managed Policy for secrets management for $cluster in region $region"
-    local cf_file=file://$(realpath $file)
-    local account=$(get_aws_account)
-    # XXX - only supports case where cluster == env
-
-    cat >$file <<EOF
-                  AWSTemplateFormatVersion: 2010-09-09
-                  Description: Kubernetes IAM Role for External Secrets
-                  Resources:
-                    ExternalSecretsManagedPolicy:
-                      Type: AWS::IAM::ManagedPolicy
-                      Properties:
-                        ManagedPolicyName: $stack_name
-                        PolicyDocument:
-                          Version: '2012-10-17'
-                          Statement:
-                          - Effect: Allow
-                            Action:
-                            - secretsmanager:GetSecretValue
-                            Resource:
-                            - "arn:aws:secretsmanager:${region}:${account}:secret:${cluster}/*"
-                          - Effect: Allow
-                            Action:
-                            - "ses:*"
-                            Resource: "*"
-EOF
-    for env in $(get_environments); do
-      local dataBucket=$(get_bucket $env data)
-      local assetBucket=$(get_bucket $env asset)
-      cat >>$file <<EOF
-                          - Effect: Allow
-                            Action:
-                            - s3:ListBucket
-                            Resource:
-                            - "arn:aws:s3:::${dataBucket}/*"
-                          - Effect: Allow
-                            Action:
-                            - s3:GetObject
-                            - s3:PutObject
-                            - s3:DeleteObject
-                            Resource:
-                            - "arn:aws:s3:::${dataBucket}/*"
-                          - Effect: Allow
-                            Action:
-                            - s3:ListBucket
-                            Resource:
-                            - "arn:aws:s3:::${assetBucket}/*"
-                          - Effect: Allow
-                            Action:
-                            - s3:GetObject
-                            Resource:
-                            - "arn:aws:s3:::${assetBucket}/*"
-EOF
-    done
-    aws cloudformation create-stack --stack-name ${stack_name} --capabilities CAPABILITY_NAMED_IAM --template-body ${cf_file}
-
-    aws cloudformation wait stack-create-complete --stack-name ${stack_name}
-    complete "Created IAM Managed Policy for secrets management"
-    rm $file
-  fi
+  pushd external-secrets
+  echo "$secrets" | external_secret upsert $cluster plaintext | separate_files | add_names
+  echo "$configmaps" | separate_files | add_names
+  popd
 }
 
 function linkerd_dashboard() {
@@ -1088,7 +1052,7 @@ function linkerd_dashboard() {
 
 # show help
 function help() {
-  echo "$0 [-h|--help] (all|values|edit_values|config|edit_repo|cluster|flux|gloo|regenerate_cert|copy_assets|idp|mesh|migrate_secrets|randomize_secrets|upsert_plaintext_secrets|install_users|deploy_key|delete_cluster|await_deletion|remove_mesh|merge_kubeconfig|gloo_dashboard|linkerd_dashboard|managed_policies|diff|envrc)*"
+  echo "$0 [-h|--help] (all|values|edit_values|config|edit_repo|cluster|flux|gloo|regenerate_cert|copy_assets|idp|mesh|migrate_secrets|randomize_secrets|upsert_plaintext_secrets|install_users|deploy_key|delete_cluster|await_deletion|remove_mesh|merge_kubeconfig|gloo_dashboard|linkerd_dashboard|diff|envrc|dns|install_certmanager|uninstall_certmanager)*"
   echo
   echo
   echo "So you want to built a Kubernetes cluster that runs Tidepool. Great!"
@@ -1127,11 +1091,13 @@ function help() {
   echo "delete_cluster - initiate deletion of the AWS EKS cluster"
   echo "await_deletion - await completion of deletion of gthe AWS EKS cluster"
   echo "merge_kubeconfig - copy the KUBECONFIG into the local $KUBECONFIG file"
+  echo "install_certmanager - install cert-manager"
+  echo "uninstall_certmanager - uninstall cert-manager"
   echo "gloo_dashboard - open the Gloo dashboard"
+  echo "dns - update the DNS aliases served"
   echo "linkerd_dashboard - open the Linkerd dashboard"
-  echo "managed_policies - create managed policies"
   echo "diff - show recent git diff"
-  echo "envrc - create .envrc file for direnv to change kubecontexts"
+  echo "envrc - create .envrc file for direnv to change kubecontexts and to set REMOTE_REPO"
 }
 
 if [ $# -eq 0 ]; then
@@ -1171,7 +1137,6 @@ eval set -- "$PARAMS"
 unset TMP_DIR
 unset TEMPLATE_DIR
 unset CHART_DIR
-unset DEV_DIR
 unset SM_DIR
 
 define_colors
@@ -1184,13 +1149,11 @@ for param in $PARAMS; do
       setup_tmpdir
       clone_remote
       set_template_dir
-      set_tools_dir
       expect_values_not_exist
       make_values
       save_changes "Added values"
       make_config
       save_changes "Added config packages"
-      create_secrets_managed_policy
       make_cluster
       merge_kubeconfig
       make_users
@@ -1229,7 +1192,6 @@ for param in $PARAMS; do
       setup_tmpdir
       clone_remote
       set_template_dir
-      set_tools_dir
       make_config
       save_changes "Added config packages"
       ;;
@@ -1237,8 +1199,6 @@ for param in $PARAMS; do
       check_remote_repo
       setup_tmpdir
       clone_remote
-      set_tools_dir
-      create_secrets_managed_policy
       make_cluster
       merge_kubeconfig
       make_users
@@ -1250,7 +1210,6 @@ for param in $PARAMS; do
       setup_tmpdir
       clone_remote
       set_template_dir
-      set_tools_dir
       confirm_matching_cluster
       install_gloo
       save_changes "Installed gloo"
@@ -1261,20 +1220,20 @@ for param in $PARAMS; do
       setup_tmpdir
       clone_remote
       set_template_dir
-      set_tools_dir
       confirm_matching_cluster
       make_flux
+      save_changes "Added flux"
+      git pull
       save_ca
       make_cert
       make_key
       update_flux
-      save_changes "Added flux"
+      save_changes "Updated flux"
       ;;
     mesh)
       check_remote_repo
       setup_tmpdir
       clone_remote
-      set_tools_dir
       confirm_matching_cluster
       make_mesh
       save_changes "Added linkerd mesh"
@@ -1284,7 +1243,6 @@ for param in $PARAMS; do
       setup_tmpdir
       clone_remote
       set_template_dir
-      set_tools_dir
       edit_values
       make_config
       save_changes "Edited values. Updated config."
@@ -1293,7 +1251,6 @@ for param in $PARAMS; do
       check_remote_repo
       setup_tmpdir
       clone_remote
-      set_tools_dir
       make_cert
       ;;
     copy_assets)
@@ -1308,7 +1265,6 @@ for param in $PARAMS; do
       check_remote_repo
       setup_tmpdir
       clone_remote
-      set_tools_dir
       local cluster=$(get_cluster)
       mkdir -p external-secrets
       (
@@ -1321,7 +1277,6 @@ for param in $PARAMS; do
       check_remote_repo
       setup_tmpdir
       clone_remote
-      set_tools_dir
       clone_secret_map
       establish_ssh
       migrate_secrets
@@ -1331,7 +1286,6 @@ for param in $PARAMS; do
       check_remote_repo
       setup_tmpdir
       clone_remote
-      set_tools_dir
       local cluster=$(get_cluster)
       mkdir -p external-secrets
       (
@@ -1411,12 +1365,6 @@ for param in $PARAMS; do
       confirm_matching_cluster
       linkerd_dashboard
       ;;
-    managed_policies)
-      check_remote_repo
-      setup_tmpdir
-      clone_remote
-      create_secrets_managed_policy
-      ;;
     diff)
       check_remote_repo
       setup_tmpdir
@@ -1435,6 +1383,22 @@ for param in $PARAMS; do
       setup_tmpdir
       clone_remote
       install_sumo
+      ;;
+    dns)
+      check_remote_repo
+      setup_tmpdir
+      clone_remote
+      set_template_dir
+      update_gloo_service
+      ;;
+    install_certmanager)
+      check_remote_repo
+      setup_tmpdir
+      clone_remote
+      install_certmanager
+      ;;
+    uninstall_certmanager)
+      uninstall_certmanager
       ;;
     *)
       panic "unknown command: $param"

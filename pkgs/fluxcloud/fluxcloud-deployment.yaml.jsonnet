@@ -9,12 +9,29 @@ local getElse(x, path, default) = (
 );
 
 local Deployment(config) = {
-  apiVersion: 'v1',
+  apiVersion: 'apps/v1',
   kind: 'Deployment',
+  metadata: {
+    name: "fluxcloud",
+    namespace: "flux",
+    annotations: {
+      "secret.reloader.stakater.com/reload": "slack"
+    },
+  },
   spec: {
+    selector: {
+      matchLabels: {
+        name: "fluxcloud",
+      },
+    },
     replicas: 1,
-    strategy: 'Recreate',
+    strategy: {},
     template: {
+      metadata: {
+        labels: {
+            name: "fluxcloud",
+        },
+      },
       spec: {
         containers: [
           {

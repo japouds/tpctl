@@ -46,10 +46,11 @@ local tidepool(config, prev, namespace) = {
     namespace: namespace
   },
   spec: {
+    local tp = config.environments[namespace].tidepool,
     chart: {
       git: "git@github.com:tidepool-org/development",
-      path: "charts/tidepool/0.1.7",
-      ref: "develop"
+      path: getElse(tp, "chart.path", "charts/tidepool/0.1.7"),
+      ref: getElse(tp, "chart.ref", "develop"),
     },
     releaseName: "%s-tidepool" % namespace,
     values: {
@@ -64,11 +65,17 @@ local tidepool(config, prev, namespace) = {
         }
       },
       blob: {
+        serviceAccount: {
+          name: "blob",
+        },
+        securityContext: {
+          fsGroup: 65534 // To be able to read Kubernetes and AWS token files
+        },
         deployment: {
           env: {
             store: {
               "s3": {
-		"bucket": getElse(config.environments[namespace].tidepool, 'buckets.data', dataBucket(config, namespace))
+		"bucket": getElse(tp, 'buckets.data', dataBucket(config, namespace))
               }
             },
             type: "s3"
@@ -83,7 +90,7 @@ local tidepool(config, prev, namespace) = {
       },
       export: {
         deployment: {
-          image: getElse(prev, 'spec.values.export.deploymentimage', "tidepool/export:develop-ddc5f311a4bdc2adae1b423f13e047ff1828d65c")
+          image: getElse(prev, 'spec.values.export.deployment.image', "tidepool/export:develop-ddc5f311a4bdc2adae1b423f13e047ff1828d65c")
         }
       },
       gatekeeper: {
@@ -111,11 +118,17 @@ local tidepool(config, prev, namespace) = {
         }
       },
       hydrophone: {
+        serviceAccount: {
+          name: "hydrophone",
+        },
+        securityContext: {
+          fsGroup: 65534 // To be able to read Kubernetes and AWS token files
+        },
         deployment: {
           env: {
             store: {
               s3: {
-		"bucket": getElse(config.environments[namespace].tidepool, 'buckets.asset', assetBucket(config, namespace))
+		"bucket": getElse(tp, 'buckets.asset', assetBucket(config, namespace))
               }
             },
             type: "s3"
@@ -124,11 +137,17 @@ local tidepool(config, prev, namespace) = {
         }
       },
       image: {
+        serviceAccount: {
+          name: "image",
+        },
+        securityContext: {
+          fsGroup: 65534 // To be able to read Kubernetes and AWS token files
+        },
         deployment: {
           env: {
             store: {
               s3: {
-		"bucket": getElse(config.environments[namespace].tidepool, 'buckets.data', dataBucket(config, namespace))
+		"bucket": getElse(tp, 'buckets.data', dataBucket(config, namespace))
               }
             },
             type: "s3"
@@ -162,11 +181,17 @@ local tidepool(config, prev, namespace) = {
         }
       },
       jellyfish: {
+        serviceAccount: {
+          name: "jellyfish",
+        },
+        securityContext: {
+          fsGroup: 65534 // To be able to read Kubernetes and AWS token files
+        },
         deployment: {
           env: {
             store: {
               s3: {
-		"bucket": getElse(config.environments[namespace].tidepool, 'buckets.data', dataBucket(config, namespace))
+		"bucket": getElse(tp, 'buckets.data', dataBucket(config, namespace))
               }
             },
             type: "s3"
