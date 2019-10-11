@@ -129,8 +129,8 @@ function define_colors() {
 
 # irrecoverable error. Show message and exit.
 function panic() {
-  echo "${RED}[✖] ${1}${RESET}"
-  exit 1
+  echo >&2 "${RED}[✖] ${1}${RESET}"
+  kill -s SIGABRT $$
 }
 
 # confirm that previous command succeeded, otherwise panic with message
@@ -343,6 +343,118 @@ function make_assets() {
     info "copying  dev assets into $bucket"
     aws s3 cp s3://tidepool-dev-asset s3://$bucket
     complete "created asset bucket $bucket"
+  done
+}
+
+# return AWS config as AWS CLI argument value shorthand
+function read_aws_config() {
+  local path=$1
+  local config_arg=$(yq r -j values.yaml ${path} | sed 's/:/=/g;s/"//g;s/^{//;s/}$//')
+  echo -n "$config_arg"
+}
+
+function get_user_pool_id() {
+  local user_pool=$1
+  local matching_ids=() # Array of IDs of matching User Pools
+  local list_results
+  # `aws cognito-idp list-user-pools` has no --filter, so we need to find the results ourselves.
+  # We need to examine all the results to make sure that there are no duplicates.
+  # The looping is required to support paging.
+  until [ "${list_results[0]}" == "None" ]; do
+    local next_token
+    local extra_args
+    [[ -n $next_token ]] && extra_args="--next-token ${next_token}" || extra_args=""
+    list_results=($(aws cognito-idp list-user-pools --max-results 60 --no-paginate $extra_args \
+      --query '[NextToken,  UserPools[?Name==`'${user_pool}'`].[Id]]' --output text))
+    next_token=${list_results[0]}
+    matching_ids+=(${list_results[@]:1})
+  done
+  if [ ${#matching_ids[@]} -gt 1 ]; then
+    panic "Found more than one match for User Pool named '${user_pool}': ${matching_ids[*]}"
+  elif [ ${#matching_ids[@]} -eq 1 ]; then
+    echo "${matching_ids[0]}"
+  else
+    echo ""
+  fi
+}
+
+# create Tidepool Cognito user pools
+function make_user_pools() {
+  local cluster=$(get_cluster)
+  local env
+  for env in $(get_environments); do
+    local enabled=$(yq r -j values.yaml environments.${env}.cognito.enabled)
+    if [ "$enabled" != "true" ]; then
+      continue
+    fi
+
+    local aws_region=$(get_region)
+    local account=$(get_aws_account)
+
+    local policies=$(read_aws_config environments.${env}.cognito.policies)
+    local mfa_config=$(read_aws_config environments.${env}.cognito.mfaConfiguration)
+
+    local from_email=$(read_aws_config environments.${env}.cognito.fromEmail)
+    local source_arn="arn:aws:ses:${aws_region}:${account}:identity/${from_email}"
+
+    local migration_lambda=$(read_aws_config environments.${env}.cognito.userMigrationLambda.functionName)
+    local migration_lambda_arn="arn:aws:lambda:${aws_region}:${account}:function:${migration_lambda}"
+    local migration_lambda_handler=$(read_aws_config environments.${env}.cognito.userMigrationLambda.functionHandler)
+
+    # Make sure that the SES identity for cognito.fromEmail exists
+    fromEmailExists=$(aws ses list-identities --identity-type EmailAddress --query 'contains(Identities[*],`'${from_email}'`)')
+    if [ "$fromEmailExists" == "false" ]; then
+      panic "email address '${from_email}' is not configured in AWS SES"
+    fi
+
+    userMigrationLambdaExists=$(aws lambda get-function --function-name ${migration_lambda_arn} \
+      --query 'Configuration.[FunctionName==`Cognito-Tidepool-User-Migration-Dev`] && Configuration.[Handler==`'${migration_lambda_handler}'`][0]')
+    if [ "$userMigrationLambdaExists" == "false" ]; then
+      panic "lambda with Function Name '${migration_lambda}' and Handler '${migration_lambda_handler}' does not exist in AWS"
+    fi
+
+    local user_pool="${cluster}-${env}"
+    start "creating Cognito User Pool '$user_pool'"
+
+    local user_pool_id=$(get_user_pool_id $user_pool)
+    if [ -n "${user_pool_id}" ]; then
+      complete "User Pool '$user_pool' already exists"
+    else
+      aws cognito-idp create-user-pool --pool-name ${user_pool} \
+        --policies $policies \
+        --auto-verified-attributes 'email' \
+        --alias-attributes 'email' \
+        --schema 'Name=termsAccepted,AttributeDataType=String,Mutable=true,Required=false,StringAttributeConstraints={MinLength=20,MaxLength=25}' \
+        --sms-verification-message 'Your verification code is {####}.' \
+        --email-verification-message 'Your verification code is {####}.' \
+        --email-verification-subject 'Your verification code' \
+        --verification-message-template 'SmsMessage="Your verification code is {####}.",EmailMessage="Your verification code is {####}.",EmailSubject=Your verification code,EmailMessageByLink="Please click the link below to verify your email address. {##Verify Email##}",EmailSubjectByLink=Verify your Tidepool account,DefaultEmailOption=CONFIRM_WITH_LINK' \
+        --sms-authentication-message 'Your authentication code is {####}.' \
+        --email-configuration "SourceArn=${source_arn},ReplyToEmailAddress=${from_email},EmailSendingAccount=DEVELOPER" \
+        --lambda-config "UserMigration=${migration_lambda_arn}" \
+        --device-configuration 'ChallengeRequiredOnNewDevice=false,DeviceOnlyRememberedOnUserPrompt=true' \
+        >/dev/null
+      # TODO: Cannot make OTP-only MFA with the CLI. Waiting on feedback from AWS.
+      # --mfa-configuration ${mfa_config} \
+      expect_success "could not create User Pool '$user_pool'"
+      complete "created User Pool '$user_pool'"
+    fi
+
+    local user_pool_clients=($(yq r -j values.yaml environments.dev.cognito.clientApps | jq -r '.[].ClientName'))
+
+    for ((i = 0; i < ${#user_pool_clients[@]}; i++)); do
+      local user_pool_client=${user_pool_clients[$i]}
+      start "adding client application '${user_pool_client}' to User Pool '$user_pool'"
+
+      if [ "$(aws cognito-idp list-user-pool-clients --user-pool-id ${user_pool_id} --query 'length(UserPoolClients[?ClientName==`'${user_pool_client}'`]) > `0`')" == "true" ]; then
+        complete "client application '${user_pool_client}' already exists in User Pool '$user_pool'"
+      else
+        local client_config=$(yq r -j values.yaml environments.dev.cognito.clientApps[$i])
+        aws cognito-idp create-user-pool-client --user-pool-id ${user_pool_id} --cli-input-json ${client_config} >/dev/null
+        expect_success "could not create client application '${user_pool_client}' for User Pool '$user_pool'"
+        complete "added client application '${user_pool_client}' to User Pool '$user_pool'"
+      fi
+    done
   done
 }
 
@@ -976,7 +1088,7 @@ function linkerd_dashboard() {
 
 # show help
 function help() {
-  echo "$0 [-h|--help] (all|values|edit_values|config|edit_repo|cluster|flux|gloo|regenerate_cert|copy_assets|mesh|migrate_secrets|randomize_secrets|upsert_plaintext_secrets|install_users|deploy_key|delete_cluster|await_deletion|remove_mesh|merge_kubeconfig|gloo_dashboard|linkerd_dashboard|managed_policies|diff|envrc)*"
+  echo "$0 [-h|--help] (all|values|edit_values|config|edit_repo|cluster|flux|gloo|regenerate_cert|copy_assets|idp|mesh|migrate_secrets|randomize_secrets|upsert_plaintext_secrets|install_users|deploy_key|delete_cluster|await_deletion|remove_mesh|merge_kubeconfig|gloo_dashboard|linkerd_dashboard|managed_policies|diff|envrc)*"
   echo
   echo
   echo "So you want to built a Kubernetes cluster that runs Tidepool. Great!"
@@ -1006,6 +1118,7 @@ function help() {
   echo "regenerate_cert - regenerate client certs for Helm to access Tiller"
   echo "edit_values - open editor to edit values.yaml file"
   echo "copy_assets - copy S3 assets to new bucket"
+  echo "idp - create AWS Cognito user pools"
   echo "migrate_secrets - migrate secrets from legacy GitHub repo to AWS secrets manager"
   echo "randomize_secrets - generate random secrets and persist into AWS secrets manager"
   echo "upsert_plaintext_secrets - read STDIN for plaintext K8s secrets"
@@ -1186,6 +1299,10 @@ for param in $PARAMS; do
     copy_assets)
       check_remote_repo
       make_assets
+      ;;
+    idp)
+      check_remote_repo
+      make_user_pools
       ;;
     randomize_secrets)
       check_remote_repo
