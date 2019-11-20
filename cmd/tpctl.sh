@@ -592,7 +592,6 @@ function enabled_pkgs() {
 
 # make K8s manifest file for shared services given config, path to directory, and prefix to strip
 function template_files() {
-  set -x
   local config=$1
   local path=$2
   local prefix=$3

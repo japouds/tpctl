@@ -27,7 +27,7 @@ local lib = import '../lib/lib.jsonnet';
   // the name of the virtual service is the name of the gateway that includes it.
   virtualServices(config, protocol, isInternal):: (
     local ingresses = $.ingresses(config);
-    local gateway = $.gatewayName(procotol, isInternal);
+    local gateway = $.gatewayName(protocol, isInternal);
     lib.values(
       std.mapWithKey(
         function(n, v) { name: gateway, namespace: n }, $.ingressesForGateway(ingresses, gateway)
