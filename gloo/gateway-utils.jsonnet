@@ -5,7 +5,9 @@ local lib = import '../lib/lib.jsonnet';
   ingresses(config):: (
     local envs = lib.environments(config);
     local pkgs = lib.packages(config);
-    std.prune(std.mapWithKey(function(n, v) lib.getElse(v, 'ingress', null), envs + pkgs))
+    std.prune(
+        std.mapWithKey(function(n, v) lib.getElse(v, 'ingress', null), envs )
+      + std.mapWithKey(function(n, v) lib.getElse(v, 'spec.values.ingress', null), pkgs))
   ),
 
   // filter ingresses by name
