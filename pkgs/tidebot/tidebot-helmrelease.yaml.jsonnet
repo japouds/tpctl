@@ -1,6 +1,6 @@
 local lib = import '../../lib/lib.jsonnet';
 
-local helmrelease(config) = {
+local helmrelease(config, prev) = {
   local tidebot = config.pkgs.tidebot,
   apiVersion: 'helm.fluxcd.io/v1',
   kind: 'HelmRelease',
