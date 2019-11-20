@@ -122,8 +122,8 @@
 
   dnsNames(config):: (
     local ingresses = $.ingresses(config);
-    local httpNames = [x.gateway.http.dnsNames for x in $.ingressesForGateway(ingresses, 'http')];
-    local httpsNames = [x.gateway.https.dnsNames for x in $.ingressesForGateway(ingresses, 'https')];
+    local httpNames = [x.gateway.http.dnsNames for x in $.values($.ingressesForGateway(ingresses, 'http'))];
+    local httpsNames = [x.gateway.https.dnsNames for x in $.values($.ingressesForGateway(ingresses, 'https'))];
     std.join(',', std.filter(function(x) x != 'localhost', std.flattenArrays(httpNames + httpsNames)))
   ),
 
