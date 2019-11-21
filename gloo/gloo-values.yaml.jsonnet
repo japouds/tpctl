@@ -33,8 +33,8 @@ local values(config) = {
          }
       },
       configMap: {
-        data: 
-      },
+        data: null
+      }, 
       podTemplate: {
         probes: false,
         image: {
@@ -101,7 +101,7 @@ local values(config) = {
         disableGeneratedGateways: true,
       },
       configMap: {
-        data: 
+        data: null
       },
       tracing: {
         provider: {
