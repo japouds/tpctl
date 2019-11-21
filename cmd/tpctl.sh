@@ -346,6 +346,7 @@ function set_template_dir() {
     git clone $(repo_with_token https://github.com/tidepool-org/tpctl)
     if [ -n "$TPCTL_BRANCH" ]; then
       git checkout $TPCTL_BRANCH
+      info "using TPCTL BRANCH $TPCTL_BRANCH"
     fi
     export TEMPLATE_DIR=$(pwd)/tpctl
     popd >/dev/null 2>&1
