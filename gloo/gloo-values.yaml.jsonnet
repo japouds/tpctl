@@ -52,7 +52,7 @@ local values(config) = {
         httpsPort: 443, 
       },
       configMap: {
-        data: {}
+        data: null
       },
       readConfig: true,
       gatewaySettings: {
@@ -99,6 +99,9 @@ local values(config) = {
       readConfig: true,
       gatewaySettings: {
         disableGeneratedGateways: true,
+      },
+      configMap: {
+        data: null
       },
       tracing: {
         provider: {
