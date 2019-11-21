@@ -32,6 +32,9 @@ local values(config) = {
            replicas: 1
          }
       },
+      configMap: {
+        data: 
+      },
       podTemplate: {
         probes: false,
         image: {
@@ -54,9 +57,6 @@ local values(config) = {
       readConfig: true,
       gatewaySettings: {
         disableGeneratedGateways: true,
-      },
-      configMap: {
-        data: 
       },
       tracing: {
         provider: {
