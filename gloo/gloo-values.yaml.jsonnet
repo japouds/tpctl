@@ -56,7 +56,7 @@ local values(config) = {
         disableGeneratedGateways: true,
       },
       configMap: {
-        data: null
+        data: 
       },
       tracing: {
         provider: {
@@ -101,7 +101,7 @@ local values(config) = {
         disableGeneratedGateways: true,
       },
       configMap: {
-        data: null
+        data: 
       },
       tracing: {
         provider: {
