@@ -85,7 +85,7 @@ local values(config) = {
   global: {
     extensions: {
       extAuth: {
-        enabled: false
+        enabled: true
       },
     },
   },
@@ -148,7 +148,7 @@ function(config) {
   global: {
     extensions: {
       extAuth: {
-        enabled: false  
+        enabled: true  
       },
     },
   },
