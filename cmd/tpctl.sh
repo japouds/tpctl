@@ -168,6 +168,7 @@ function install_gloo() {
 	  kubectl delete crd ${x}.gateway.solo.io
   done
   kubectl delete crd gateways.gateway.solo.io.v2
+  kubectl delete clusterroles.rbac.authorization.k8s.io gloo-resource-mutator-gloo-system
   helm install glooe/gloo-ee --version 1.0.0-rc7 --name glooe --namespace gloo-system --set-string license_key=$GLOO_LICENSE_KEY -f $TMP_DIR/gloo-values.yaml
   expect_success "Templating failure gloo/gloo-values.yaml.jsonnet"
 
