@@ -74,13 +74,6 @@ local values(config) = {
   rateLimit: {
     enabled: false,
   },
-  global: {
-    extensions: {
-      extAuth: {
-        enabled: false  
-      },
-    },
-  },
   crds: {
     create: true,
   },
@@ -133,4 +126,13 @@ local values(config) = {
   },
 };
 
-function(config) values(config)
+function(config) {
+  global: {
+    extensions: {
+      extAuth: {
+        enabled: false  
+      },
+    },
+  },
+  gloo: values(config),
+}
