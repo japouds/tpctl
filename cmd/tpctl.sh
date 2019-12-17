@@ -158,6 +158,7 @@ function install_gloo() {
   (
     cd gloo
     cat $TMP_DIR/gloo-values.yaml
+    glooctl version
     glooctl install gateway enterprise --license-key $GLOO_LICENSE_KEY -n gloo-system --values $TMP_DIR/gloo-values.yaml --dry-run | separate_files | add_names
     expect_success "Templating failure gloo/gloo-values.yaml.jsonnet"
   )
