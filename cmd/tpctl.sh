@@ -1,4 +1,4 @@
-#!/bin/bash -ix
+#!/bin/bash -i
 #
 # Configure EKS cluster to run Tidepool services
 #
@@ -157,6 +157,7 @@ function install_gloo() {
   mkdir -p gloo
   (
     cd gloo
+    cat $TMP_DIR/gloo-values.yaml
     glooctl install gateway enterprise --license-key $GLOO_LICENSE_KEY -n gloo-system --values $TMP_DIR/gloo-values.yaml --dry-run | separate_files | add_names
     expect_success "Templating failure gloo/gloo-values.yaml.jsonnet"
   )
