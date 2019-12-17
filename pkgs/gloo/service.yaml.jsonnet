@@ -52,4 +52,4 @@ local service(config) = {
   },
 };
 
-function(config, prev) service(expand.expandConfig(config), prev)
+function(config, prev) service(expand.expandConfig(config))
