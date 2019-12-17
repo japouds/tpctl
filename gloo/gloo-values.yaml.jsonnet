@@ -118,14 +118,14 @@ local values(config) = {
   },
   gatewayProxies: {
     internalGatewayProxy: baseGatewayProxy(config) {
-      service: {
+      service+: {
         type: 'ClusterIP',
       },
     },
     gatewayProxy: baseGatewayProxy(config) {
-      service: {
+      service+: {
         type: 'LoadBalancer',
-        extraAnnotations: {
+        extraAnnotations+: {
           'service.beta.kubernetes.io/aws-load-balancer-proxy-protocol': '*',
           'external-dns.alpha.kubernetes.io/alias': 'true',
           'external-dns.alpha.kubernetes.io/hostname': lib.dnsNames(config),
