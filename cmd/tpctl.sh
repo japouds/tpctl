@@ -1,4 +1,4 @@
-#!/bin/bash -i
+#!/bin/bash -ix
 #
 # Configure EKS cluster to run Tidepool services
 #
@@ -7,8 +7,6 @@ set -o pipefail
 export FLUX_FORWARD_NAMESPACE=flux
 export REVIEWERS="derrickburns pazaan jamesraby"
 
-GLOO_LICENSE_KEY=$(aws secretsmanager get-secret-value --secret-id $cluster/gloo-system/gloo | jq '.SecretString' | yq r - | jq '."gloo-license-key"' |  sed -e 's/"//g' -e 's/\\n/\
-/g')
 
 
 function envoy {
@@ -147,6 +145,9 @@ function install_gloo() {
   install_glooctl
   start "installing gloo"
   local config=$(get_config)
+  local cluster=$(get_cluster)
+  GLOO_LICENSE_KEY=$(aws secretsmanager get-secret-value --secret-id $cluster/gloo-system/gloo | jq '.SecretString' | yq r - | jq '."gloo-license-key"' |  sed -e 's/"//g' -e 's/\\n/\
+/g')
   jsonnet --tla-code config="$config" $TEMPLATE_DIR/gloo/gloo-values.yaml.jsonnet | yq r - >$TMP_DIR/gloo-values.yaml
   expect_success "Templating failure gloo/gloo-values.yaml.jsonnet"
 
