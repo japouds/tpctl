@@ -159,7 +159,7 @@ function install_gloo() {
   glooctl uninstall --all
   kubectl delete validatingwebhookconfigurations.admissionregistration.k8s.io gloo-gateway-validation-webhook-gloo-system
   helm delete glooe --purge
-  for x in authconfigs.enterprise proxies settings upstreams upstreamgroups 
+  for x in authconfigs.enterprise proxies settings upstreams upstreamgroups gateways
   do 
 	  kubectl delete crd ${x}.gloo.solo.io
   done
