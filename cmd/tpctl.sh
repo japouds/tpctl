@@ -159,6 +159,10 @@ function install_gloo() {
   glooctl uninstall --all
   kubectl delete validatingwebhookconfigurations.admissionregistration.k8s.io gloo-gateway-validation-webhook-gloo-system
   helm delete glooe --purge
+  for x in authconfigs.enterprise proxies settings upstreams upstreamgroups 
+  do 
+	  kubectl delete crd ${x}.gloo.solo.io
+  done
   helm install glooe/gloo-ee --name glooe --namespace gloo-system --set-string license_key=$GLOO_LICENSE_KEY -f $TMP_DIR/gloo-values.yaml
   expect_success "Templating failure gloo/gloo-values.yaml.jsonnet"
 
