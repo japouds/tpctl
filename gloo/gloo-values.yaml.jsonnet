@@ -71,6 +71,16 @@ local baseGatewayProxy(config) = {
 };
 
 local values(config) = {
+  rateLimit: {
+    enabled: false,
+  },
+  global: {
+    extensions: {
+      extAuth: {
+        enabled: false  
+      },
+    },
+  },
   crds: {
     create: true,
   },
