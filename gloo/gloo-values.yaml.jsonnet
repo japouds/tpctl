@@ -85,7 +85,7 @@ local values(config) = {
     create: true,
   },
   settings: {
-    create: true,
+    create: false,
     linkerd: true,
   },
   namespace: {
