@@ -1,35 +1,46 @@
 local lib = import '../lib/lib.jsonnet';
 
 local baseGatewayProxy(config) = {
-  stats: true,
-  kind: {
-    deployment: {
-      replicas: 2,
-    },
-  },
+  antiAffinity: false,
   configMap: {
     data: null,
   },
-  podTemplate: {
-    probes: false,
-    image: {
-      repository: 'gloo-envoy-wrapper',
+  extraInitContainersHelper: '',
+  extraVolumeHelper: '',
+  gatewaySettings: {
+    disableGeneratedGateways: false,
+    useProxyProto: false,
+  },
+  kind: {
+    deployment: {
+      replicas: 1,
     },
+  },
+  podTemplate: {
+    disableNetBind: false,
+    floatingUserId: false,
     httpPort: 8080,
     httpsPort: 8443,
+    image: {
+      repository: 'gloo-envoy-wrapper',
+      tag: '1.2.5',
+    },
+    probes: false,
     runAsUser: 10101,
+    runUnprivileged: false,
+    tolerations: null,
     extraAnnotations: {
       'linkerd.io/inject': 'enabled',
     },
   },
+  readConfig: true,
   service: {
     httpPort: 80,
     httpsPort: 443,
+    type: 'LoadBalancer',
   },
-  readConfig: true,
-  gatewaySettings: {
-    disableGeneratedGateways: true,
-  },
+  stats: true,
+
   tracing: if lib.getElse(config, 'pkgs.jaeger.enabled', false) then {
     provider: {
       name: 'envoy.zipkin',
