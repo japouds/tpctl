@@ -7,6 +7,10 @@ set -o pipefail
 export FLUX_FORWARD_NAMESPACE=flux
 export REVIEWERS="derrickburns pazaan jamesraby"
 
+GLOO_LICENSE_KEY=$(aws secretsmanager get-secret-value --secret-id $cluster/gloo-system/gloo | jq '.SecretString' | yq r - | jq '."gloo-license-key"' |  sed -e 's/"//g' -e 's/\\n/\
+/g')
+
+
 function envoy {
   glooctl proxy served-config
 }
@@ -152,11 +156,11 @@ function install_gloo() {
   mkdir -p gloo
   (
     cd gloo
-    glooctl install gateway -n gloo-system --values $TMP_DIR/gloo-values.yaml --dry-run | separate_files | add_names
+    glooctl install gateway enterprise --license-key $GLOO_LICENSE_KEY -n gloo-system --values $TMP_DIR/gloo-values.yaml --dry-run | separate_files | add_names
     expect_success "Templating failure gloo/gloo-values.yaml.jsonnet"
   )
 
-  glooctl install gateway -n gloo-system --values $TMP_DIR/gloo-values.yaml
+  glooctl install gateway enterprise --license-key $GLOO_LICENSE_KEY -n gloo-system --values $TMP_DIR/gloo-values.yaml
   expect_success "Gloo installation failure"
   complete "installed gloo"
 }

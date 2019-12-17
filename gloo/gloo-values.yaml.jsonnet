@@ -71,6 +71,9 @@ local baseGatewayProxy(config) = {
 };
 
 local values(config) = {
+  crds: {
+    create: true,
+  },
   settings: {
     create: true,
     linkerd: true,
