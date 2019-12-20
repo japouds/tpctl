@@ -24,11 +24,6 @@ RUN curl -sL -o /usr/local/bin/aws-iam-authenticator https://amazon-eks.s3-us-we
     curl -sL -o aws-iam-authenticator.sha256 https://amazon-eks.s3-us-west-2.amazonaws.com/1.14.6/2019-08-22/bin/linux/amd64/aws-iam-authenticator.sha256 && \
     openssl sha1 -sha256 /usr/local/bin/aws-iam-authenticator && \
     rm ./aws-iam-authenticator.sha256
-RUN curl -sL https://github.com/github/hub/releases/download/v2.11.2/hub-linux-amd64-2.11.2.tgz | tar xz -C /tmp/ && \
-    mv /tmp/hub-linux-amd64-2.11.2/bin/hub . && \
-    chgrp root hub && \
-    chown root hub && \
-    mv hub /usr/local/bin
 RUN curl -sL -o /usr/local/bin/fluxctl https://github.com/fluxcd/flux/releases/download/1.14.2/fluxctl_linux_amd64
 RUN curl -sL -o /usr/local/bin/cfssl https://pkg.cfssl.org/R1.2/cfssl_linux-amd64 && \
     curl -sL -o /usr/local/bin/cfssljson https://pkg.cfssl.org/R1.2/cfssljson_linux-amd64 && \
